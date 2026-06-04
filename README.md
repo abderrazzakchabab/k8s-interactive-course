@@ -2,6 +2,22 @@
 
 An interactive web application to learn Kubernetes from scratch. Features chapters, quizzes, exercises, visual SVG diagrams, and an embedded terminal to run kubectl commands directly in your browser.
 
+
+
+## 📸 Screenshots
+
+| Homepage | Chapters |
+|:---:|:---:|
+| ![Homepage](screenshots/01-homepage.png) | ![Chapters](screenshots/02-chapters.png) |
+
+| Chapter 1 - Introduction | Chapter 2 - Deployments |
+|:---:|:---:|
+| ![Chapter 1](screenshots/03-chapter1.png) | ![Chapter 2](screenshots/04-chapter2-deployments.png) |
+
+| Exercises | Terminal |
+|:---:|:---:|
+| ![Exercises](screenshots/05-exercises.png) | ![Terminal](screenshots/06-terminal.png) |
+
 ## ✨ Features
 
 - **7 Comprehensive Chapters** covering K8s fundamentals

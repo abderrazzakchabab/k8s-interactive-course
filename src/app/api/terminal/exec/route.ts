@@ -41,6 +41,7 @@ const EXEC_ENV = {
     process.env.PATH || '',
   ].join(':'),
   HOME: process.env.HOME || '/root',
+  KUBECONFIG: process.env.KUBECONFIG || '/home/isc-cha/.kube/config',
 };
 
 export async function POST(request: NextRequest) {

@@ -11,95 +11,146 @@ interface ChapterContentProps {
   chapter: Chapter;
 }
 
-function detectCodeLang(code: string): string {
+// ── Syntax-highlighted code example block ──
+
+const C2 = {
+  key:      '#7ee3f8', // cyan
+  str:      '#98c379', // green
+  val:      '#e6edf3', // white (unquoted YAML values)
+  bool:     '#d2a8ff', // purple
+  num:      '#f5a623', // amber
+  comment:  '#636d83', // dim grey
+  punct:    '#636d83', // dim grey for colons, dashes
+  list:     '#f0883e', // orange for list markers
+  cmd:      '#f0883e', // orange for commands
+  flag:     '#7ee3f8', // cyan for flags
+  var:      '#d2a8ff', // purple for variables
+};
+
+const hlCommands = new Set([
+  'kubectl', 'docker', 'docker-compose', 'helm', 'curl', 'wget',
+  'cat', 'echo', 'ls', 'cd', 'mkdir', 'rm', 'cp', 'mv', 'chmod', 'chown',
+  'git', 'npm', 'npx', 'node', 'python', 'python3', 'go', 'cargo',
+  'grep', 'sed', 'awk', 'sort', 'uniq', 'wc', 'head', 'tail',
+  'k', 'minikube', 'kind', 'terraform', 'ansible', 'env', 'which', 'ps',
+]);
+
+function esc2(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function sp2(color: string, text: string): string {
+  if (!text || text.startsWith('<span')) return text;
+  return '<span style="color:' + color + '">' + text + '</span>';
+}
+
+function hlYamlLine(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('#')) return sp2(C2.comment, esc2(line));
+  if (trimmed === '---') return '<span style="color:' + C2.comment + '">' + esc2(line) + '</span>';
+
+  const indent = line.match(/^(\s*)/)![1];
+  const content = line.slice(indent.length);
+
+  // List item: "- key: value" or "- value"
+  if (/^-\s/.test(content)) {
+    const rest = content.slice(2);
+    const kv = rest.match(/^([\w.-]+)(\s*:\s*)(.*)$/);
+    if (kv) {
+      return esc2(indent) + sp2(C2.list, '- ') + sp2(C2.key, esc2(kv[1])) + sp2(C2.punct, esc2(kv[2])) + hlYamlVal2(kv[3]);
+    }
+    return esc2(indent) + sp2(C2.list, '- ') + sp2(C2.val, esc2(rest));
+  }
+
+  // Key: value
+  const kv = content.match(/^([\w.-]+)(\s*:\s*)(.*)$/);
+  if (kv) {
+    return esc2(indent) + sp2(C2.key, esc2(kv[1])) + sp2(C2.punct, esc2(kv[2])) + hlYamlVal2(kv[3]);
+  }
+
+  if (/^[|>]\s*$/.test(trimmed)) return sp2(C2.punct, esc2(line));
+  return esc2(line);
+}
+
+function hlYamlVal2(val: string): string {
+  const trimmed = val.trim();
+  if (!trimmed) return esc2(val);
+  const leading = val.slice(0, val.length - val.trimStart().length);
+  const trailing = val.slice(val.trimEnd().length);
+  const inner = trimmed;
+
+  let colored: string;
+  if (/^["'].*["']$/.test(inner)) colored = sp2(C2.str, esc2(inner));
+  else if (/^(true|false|yes|no|on|off)$/i.test(inner)) colored = sp2(C2.bool, esc2(inner));
+  else if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(inner)) colored = sp2(C2.num, esc2(inner));
+  else if (/^(null|Null|NULL|~)$/.test(inner)) colored = sp2(C2.bool, esc2(inner));
+  else if (inner.length > 0) colored = sp2(C2.val, esc2(inner));
+  else colored = esc2(inner);
+
+  return esc2(leading) + colored + esc2(trailing);
+}
+
+function hlBashLine(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('#')) return sp2(C2.comment, esc2(line));
+
+  const cmdMatch = line.match(/^(\s*)([\w][\w-]*)((?:\s|$).*)?$/);
+  if (cmdMatch && hlCommands.has(cmdMatch[2])) {
+    const ind = cmdMatch[1];
+    const cmd = cmdMatch[2];
+    const rest = cmdMatch[3] || '';
+    return esc2(ind) + sp2(C2.cmd, esc2(cmd)) + hlArgs2(rest);
+  }
+  return esc2(line);
+}
+
+function hlArgs2(args: string): string {
+  let r = esc2(args);
+  r = r.replace(/(\s|^)(--[\w-]+|-\w+)(?=\s|$)/g, (m: string, ws: string, flag: string) => ws + '<span style="color:' + C2.flag + '">' + flag + '</span>');
+  r = r.replace(/"([^"\\]|\\.)*"/g, '<span style="color:' + C2.str + '">$&</span>');
+  r = r.replace(/'([^'\\]|\\.)*'/g, '<span style="color:' + C2.str + '">$&</span>');
+  r = r.replace(/\$\{?\w+\}?/g, '<span style="color:' + C2.var + '">$&</span>');
+  return r;
+}
+
+function hlJsonLine(line: string): string {
+  let r = esc2(line);
+  r = r.replace(/"([^"]+)"\s*:/g, '<span style="color:' + C2.key + '">"$1"</span><span style="color:' + C2.punct + '">:</span>');
+  r = r.replace(/:\s*"([^"]*)"/g, ': <span style="color:' + C2.str + '">"$1"</span>');
+  r = r.replace(/:\s*(-?\d+(\.\d+)?([eE][+-]?\d+)?)/g, ': <span style="color:' + C2.num + '">$1</span>');
+  r = r.replace(/:\s*(true|false|null)\b/g, ': <span style="color:' + C2.bool + '">$1</span>');
+  return r;
+}
+
+function detectCodeLang2(code: string): string {
   const trimmed = code.trimStart();
   if (trimmed.startsWith('apiVersion:') || trimmed.startsWith('kind:') || trimmed.startsWith('metadata:') || /^\s*(spec|selector|template):/.test(trimmed)) return 'yaml';
-  if (trimmed.startsWith('kubectl') || trimmed.startsWith('docker') || trimmed.startsWith('curl') || trimmed.startsWith('helm')) return 'bash';
+  if (trimmed.startsWith('kubectl') || trimmed.startsWith('docker') || trimmed.startsWith('curl')) return 'bash';
   if (trimmed.startsWith('{') || trimmed.startsWith('[')) return 'json';
   return '';
 }
 
-// ── Syntax-highlighted code example block ──
-
-// Key/value colour map for YAML rendering
-const YAML_COLORS: Record<string, string> = {
-  key: '#79c0ff',       // blue
-  string: '#a5d6ff',    // light blue
-  boolean: '#d2a8ff',   // purple
-  number: '#79c0ff',    // blue
-  null: '#f97583',      // red
-  comment: '#8b949e',   // grey
-  punctuation: '#484f58', // dim grey
-  directive: '#58a6ff',  // bright blue
-  listMarker: '#f0883e', // orange
-  command: '#f0883e',    // orange
-  flag: '#79c0ff',       // blue
-  variable: '#d2a8ff',   // purple
-  operator: '#484f58',   // dim
-};
-
-function highlightLine(line: string, lang: string): string {
-  const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-
-  if (lang === 'yaml') {
-    if (/^\s*#/.test(line)) return `<span style="color:${YAML_COLORS.comment}">${esc(line)}</span>`;
-    if (/^---/.test(line)) return `<span style="color:${YAML_COLORS.directive};font-weight:600">${esc(line)}</span>`;
-
-    const kv = line.match(/^(\s*)([\w.-]+)(\s*:\s*)(.*)$/);
-    if (kv) {
-      const [, indent, key, sep, val] = kv;
-      let styledVal = esc(val);
-      const tv = val.trim();
-      if (/^["'].*["']$/.test(tv)) styledVal = `<span style="color:${YAML_COLORS.string}">${esc(val)}</span>`;
-      else if (/^(true|false|yes|no)$/i.test(tv)) styledVal = `<span style="color:${YAML_COLORS.boolean}">${esc(val)}</span>`;
-      else if (/^\d+(\.\d+)?$/.test(tv)) styledVal = `<span style="color:${YAML_COLORS.number}">${esc(val)}</span>`;
-      else if (/^(null|~)$/i.test(tv)) styledVal = `<span style="color:${YAML_COLORS.null}">${esc(val)}</span>`;
-      return `${esc(indent)}<span style="color:${YAML_COLORS.key}">${esc(key)}</span><span style="color:${YAML_COLORS.punctuation}">${esc(sep)}</span>${styledVal}`;
-    }
-
-    const li = line.match(/^(\s*-\s+)(.*)$/);
-    if (li) return `${esc(li[1])}<span style="color:${YAML_COLORS.listMarker}">${esc(li[2])}</span>`;
-
-    return esc(line);
-  }
-
-  if (lang === 'bash') {
-    if (/^\s*#/.test(line)) return `<span style="color:${YAML_COLORS.comment}">${esc(line)}</span>`;
-    const cmd = line.match(/^(\s*)(kubectl|docker|curl|wget|cat|echo|ls|cd|mkdir|rm|cp|mv|git|npm|npx|node|python|helm|k)(\s+.*)$/);
-    if (cmd) {
-      return `${esc(cmd[1])}<span style="color:${YAML_COLORS.command};font-weight:500">${esc(cmd[2])}</span>${highlightBashArgs(cmd[3], esc)}`;
-    }
-    return esc(line);
-  }
-
-  if (lang === 'json') {
-    return esc(line)
-      .replace(/"([^"]+)"\s*:/g, `<span style="color:${YAML_COLORS.key}">"$1"</span><span style="color:${YAML_COLORS.punctuation}">:</span>`)
-      .replace(/:\s*"([^"]*)"/g, `: <span style="color:${YAML_COLORS.string}">"$1"</span>`)
-      .replace(/:\s*(\d+\.?\d*)/g, `: <span style="color:${YAML_COLORS.number}">$1</span>`)
-      .replace(/:\s*(true|false|null)/g, `: <span style="color:${YAML_COLORS.boolean}">$1</span>`);
-  }
-
-  return esc(line);
-}
-
-function highlightBashArgs(rest: string, esc: (s: string) => string): string {
-  return rest
-    .replace(/(--[\w-]+|-\w+)/g, `<span style="color:${YAML_COLORS.flag}">$1</span>`)
-    .replace(/("([^"\\]|\\.)*"|'([^'\\]|\\.)*')/g, `<span style="color:${YAML_COLORS.string}">$1</span>`)
-    .replace(/\$\{?\w+\}?/g, `<span style="color:${YAML_COLORS.variable}">$&</span>`);
+function codeHighlightLine(line: string, lang: string): string {
+  if (lang === 'yaml' || lang === 'yml') return hlYamlLine(line);
+  if (lang === 'bash' || lang === 'sh' || lang === 'shell') return hlBashLine(line);
+  if (lang === 'json') return hlJsonLine(line);
+  return esc2(line);
 }
 
 function CodeExampleWithHighlight({ code }: { code: string }) {
-  const lang = detectCodeLang(code);
+  const lang = detectCodeLang2(code);
   const lines = code.split('\n');
   const firstCmd = code.trim().split('\n')[0] || '';
   const [copied, setCopied] = useState(false);
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(code);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
   };
 
   return (
@@ -108,26 +159,24 @@ function CodeExampleWithHighlight({ code }: { code: string }) {
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-500 font-mono">{lang || 'bash'}</span>
         </div>
-        <div className="flex items-center gap-2">
-          <button onClick={handleCopy} className="text-xs text-slate-500 hover:text-slate-300 transition">
-            {copied ? 'Copied!' : 'Copy'}
-          </button>
-        </div>
+        <button onClick={handleCopy} className="text-xs text-slate-500 hover:text-slate-300 transition font-mono">
+          {copied ? 'copied' : 'copy'}
+        </button>
       </div>
       <pre className="p-4 text-sm overflow-x-auto leading-relaxed">
         <code className="block font-mono">
           {lines.map((line, li) => (
             <span
               key={li}
-              className="block hover:bg-white/[0.02]"
-              dangerouslySetInnerHTML={{ __html: highlightLine(line, lang) }}
+              className="block hover:bg-white/[0.02] whitespace-pre"
+              dangerouslySetInnerHTML={{ __html: codeHighlightLine(line, lang) || ' ' }}
             />
           ))}
         </code>
       </pre>
-      <div className="px-4 py-2 bg-[#161b22] border-t border-slate-700 flex items-center gap-3">
+      <div className="px-4 py-2 bg-[#161b22] border-t border-slate-700">
         <a
-          href={`/terminal?cmd=${encodeURIComponent(firstCmd)}`}
+          href={'/terminal?cmd=' + encodeURIComponent(firstCmd)}
           className="text-xs text-[#326CE5] hover:text-[#60a5fa] transition flex items-center gap-1"
         >
           <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -139,7 +188,6 @@ function CodeExampleWithHighlight({ code }: { code: string }) {
     </div>
   );
 }
-
 export default function ChapterContent({ chapter }: ChapterContentProps) {
   return (
     <div className="max-w-4xl mx-auto">

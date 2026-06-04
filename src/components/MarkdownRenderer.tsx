@@ -1,13 +1,15 @@
 'use client';
 
+import React, { useState } from 'react';
+
+// ═══════════════════════════════════════════
+// MarkdownRenderer - parses markdown into blocks
+// ═══════════════════════════════════════════
+
 interface MarkdownRendererProps {
   content: string;
 }
 
-/**
- * Converts markdown text to rendered JSX with YAML/Bash syntax highlighting.
- * Handles: fenced code blocks (```yaml, ```bash), inline code, bold, lists, tables, links.
- */
 export default function MarkdownRenderer({ content }: MarkdownRendererProps) {
   const blocks = parseBlocks(content);
   return <>{blocks.map((block, i) => renderBlock(block, i))}</>;
@@ -29,7 +31,6 @@ function parseBlocks(content: string): ContentBlock[] {
   while (i < lines.length) {
     const line = lines[i];
 
-    // Fenced code block
     if (/^```(\w*)$/.test(line)) {
       const lang = line.match(/^```(\w*)$/)![1];
       const codeLines: string[] = [];
@@ -38,45 +39,40 @@ function parseBlocks(content: string): ContentBlock[] {
         codeLines.push(lines[i]);
         i++;
       }
-      i++; // skip closing ```
+      i++;
       blocks.push({ type: 'code', lang, code: codeLines.join('\n') });
       continue;
     }
 
-    // Heading: starts with #
     if (/^#{1,3}\s/.test(line)) {
       const level = line.match(/^(#{1,3})\s/)![1].length;
-      const text = line.replace(/^#{1,3}\s+/, '');
-      blocks.push({ type: 'heading', level, text });
+      blocks.push({ type: 'heading', level, text: line.replace(/^#{1,3}\s+/, '') });
       i++;
       continue;
     }
 
-    // Empty line
     if (line.trim() === '') {
-      blocks.push({ type: 'empty' });
+      if (blocks.length > 0 && blocks[blocks.length - 1].type !== 'empty') {
+        blocks.push({ type: 'empty' });
+      }
       i++;
       continue;
     }
 
-    // Table row: | col1 | col2 |
     if (line.trimStart().startsWith('|') && line.includes('|')) {
       const tableRows: string[][] = [];
       while (i < lines.length && lines[i].trimStart().startsWith('|') && lines[i].includes('|')) {
-        const cells = lines[i]
-          .split('|')
-          .filter(c => c.trim() !== '---' && c.trim() !== ':---' && c.trim() !== '---:' && c.trim() !== ':---:')
-          .map(c => c.trim());
-        if (cells.length > 0) {
-          tableRows.push(cells);
-        }
+        const cells = lines[i].split('|').filter(c => {
+          const t = c.trim();
+          return t !== '' && t !== '---' && t !== ':---' && t !== '---:' && t !== ':---:';
+        }).map(c => c.trim());
+        if (cells.length > 0) tableRows.push(cells);
         i++;
       }
       blocks.push({ type: 'table', rows: tableRows });
       continue;
     }
 
-    // Unordered list
     if (/^[-*]\s/.test(line.trimStart())) {
       const items: string[] = [line.replace(/^[-*]\s+/, '')];
       i++;
@@ -88,7 +84,6 @@ function parseBlocks(content: string): ContentBlock[] {
       continue;
     }
 
-    // Paragraph
     const paraLines: string[] = [line];
     i++;
     while (i < lines.length && lines[i].trim() !== '' && !/^(#{1,3}\s|```|[-*]\s|\|)/.test(lines[i])) {
@@ -97,52 +92,35 @@ function parseBlocks(content: string): ContentBlock[] {
     }
     blocks.push({ type: 'paragraph', lines: paraLines });
   }
-
   return blocks;
 }
 
 function renderBlock(block: ContentBlock, key: number) {
   switch (block.type) {
-    case 'code':
-      return renderCodeBlock(block.lang, block.code, key);
-    case 'heading':
-      return renderHeading(block.level, block.text, key);
-    case 'paragraph':
-      return renderParagraph(block.lines, key);
-    case 'list':
-      return renderList(block.items, key);
-    case 'table':
-      return renderTable(block.rows, key);
-    case 'empty':
-      return <div key={key} className="h-3" />;
-    default:
-      return null;
+    case 'code':    return <CodeBlock key={key} lang={block.lang} code={block.code} />;
+    case 'heading': return <Heading key={key} level={block.level} text={block.text} />;
+    case 'paragraph': return <Paragraph key={key} lines={block.lines} />;
+    case 'list':    return <ListBlock key={key} items={block.items} />;
+    case 'table':   return <TableBlock key={key} rows={block.rows} />;
+    case 'empty':   return <div key={key} className="h-3" />;
   }
 }
 
 // ── Heading ──
-function renderHeading(level: number, text: string, key: number) {
-  const sizes = ['text-lg', 'text-base', 'text-sm'];
-  const size = sizes[level - 1] || 'text-sm';
-  const cls = `text-white font-semibold mt-5 mb-2 ${size}`;
-  const inner = renderInline(text);
-  switch (level) {
-    case 1: return <h1 key={key} className={cls}>{inner}</h1>;
-    case 2: return <h2 key={key} className={cls}>{inner}</h2>;
-    case 3: return <h3 key={key} className={cls}>{inner}</h3>;
-    default: return <h4 key={key} className={cls}>{inner}</h4>;
-  }
+function Heading({ level, text }: { level: number; text: string }) {
+  const sizes = ['text-xl font-bold', 'text-lg font-semibold', 'text-base font-semibold'];
+  const cls = `text-white mt-5 mb-3 ${sizes[level - 1] || 'text-sm font-semibold'}`;
+  return <div className={cls}>{renderInline(text)}</div>;
 }
 
-// ── Paragraph with inline formatting ──
-function renderParagraph(lines: string[], key: number) {
-  if (lines.length === 1 && lines[0].trim() === '') return <div key={key} className="h-3" />;
+// ── Paragraph ──
+function Paragraph({ lines }: { lines: string[] }) {
   return (
-    <p key={key} className="text-slate-300 mb-2 leading-relaxed">
-      {lines.map((ln, li) => (
-        <span key={li}>
+    <p className="text-slate-300 mb-3 leading-relaxed">
+      {lines.map((ln, i) => (
+        <span key={i}>
           {renderInline(ln)}
-          {li < lines.length - 1 && <br />}
+          {i < lines.length - 1 && <br />}
         </span>
       ))}
     </p>
@@ -150,29 +128,27 @@ function renderParagraph(lines: string[], key: number) {
 }
 
 // ── List ──
-function renderList(items: string[], key: number) {
+function ListBlock({ items }: { items: string[] }) {
   return (
-    <ul key={key} className="list-disc list-inside space-y-1 mb-3 ml-1">
+    <ul className="list-disc list-inside space-y-1 mb-4 ml-2">
       {items.map((item, i) => (
-        <li key={i} className="text-slate-300 text-sm">
-          {renderInline(item)}
-        </li>
+        <li key={i} className="text-slate-300 text-sm">{renderInline(item)}</li>
       ))}
     </ul>
   );
 }
 
 // ── Table ──
-function renderTable(rows: string[][], key: number) {
-  if (rows.length === 0) return null;
+function TableBlock({ rows }: { rows: string[][] }) {
+  if (!rows.length) return null;
   const [header, ...body] = rows;
   return (
-    <div key={key} className="overflow-x-auto mb-3">
+    <div className="overflow-x-auto mb-4 border border-slate-700 rounded-lg">
       <table className="min-w-full text-sm border-collapse">
         <thead>
-          <tr className="border-b border-slate-600">
+          <tr className="bg-slate-800/50">
             {header.map((cell, ci) => (
-              <th key={ci} className="px-3 py-2 text-left text-slate-200 font-semibold whitespace-nowrap">
+              <th key={ci} className="px-4 py-2.5 text-left text-slate-200 font-semibold whitespace-nowrap border-b border-slate-700">
                 {renderInline(cell)}
               </th>
             ))}
@@ -180,11 +156,9 @@ function renderTable(rows: string[][], key: number) {
         </thead>
         <tbody>
           {body.map((row, ri) => (
-            <tr key={ri} className="border-b border-slate-700/50 hover:bg-slate-800/30">
+            <tr key={ri} className="border-b border-slate-800 last:border-0 hover:bg-slate-800/20">
               {row.map((cell, ci) => (
-                <td key={ci} className="px-3 py-2 text-slate-300 whitespace-nowrap">
-                  {renderInline(cell)}
-                </td>
+                <td key={ci} className="px-4 py-2 text-slate-300 whitespace-nowrap">{renderInline(cell)}</td>
               ))}
             </tr>
           ))}
@@ -194,30 +168,31 @@ function renderTable(rows: string[][], key: number) {
   );
 }
 
-// ── Code Block with Syntax Highlighting ──
-function renderCodeBlock(lang: string, code: string, key: number) {
-  const langLabel = lang || 'text';
-  const highlighted = highlightCode(code, lang);
+// ── Code Block (component with hooks) ──
+function CodeBlock({ lang, code }: { lang: string; code: string }) {
+  const [copied, setCopied] = useState(false);
+  const lines = code.split('\n');
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
 
   return (
-    <div key={key} className="my-4 bg-[#0d1117] rounded-lg overflow-hidden border border-slate-700">
-      <div className="px-4 py-2 bg-[#161b22] border-b border-slate-700 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-500 font-mono">{langLabel}</span>
-        </div>
-        <button
-          onClick={() => navigator.clipboard.writeText(code)}
-          className="text-xs text-slate-500 hover:text-slate-300 transition"
-        >
-          Copy
+    <div className="my-4 bg-[#0d1117] rounded-lg overflow-hidden border border-slate-700">
+      <div className="px-4 py-2.5 bg-[#161b22] border-b border-slate-700 flex items-center justify-between">
+        <span className="text-xs font-mono text-slate-500">{lang || 'text'}</span>
+        <button onClick={handleCopy} className="text-xs text-slate-500 hover:text-slate-300 transition font-mono">
+          {copied ? 'copied' : 'copy'}
         </button>
       </div>
-      <pre className="p-4 text-sm overflow-x-auto leading-relaxed">
+      <pre className="p-4 text-sm overflow-x-auto leading-6">
         <code className="block font-mono">
-          {highlighted.split('\n').map((line, li) => (
-            <span key={li} className="block hover:bg-white/[0.02]">
-              {line || ' '}
-            </span>
+          {lines.map((line, i) => (
+            <CodeLine key={i} line={line} lang={lang} />
           ))}
         </code>
       </pre>
@@ -225,9 +200,18 @@ function renderCodeBlock(lang: string, code: string, key: number) {
   );
 }
 
-// ── Inline content ──
+function CodeLine({ line, lang }: { line: string; lang: string }) {
+  const html = highlightLine(line, lang);
+  return (
+    <span className="block hover:bg-white/[0.02] whitespace-pre" dangerouslySetInnerHTML={{ __html: html || ' ' }} />
+  );
+}
+
+// ═══════════════════════════════════════════
+// Inline formatting
+// ═══════════════════════════════════════════
+
 function renderInline(text: string) {
-  // Parse bold + inline code mixed
   const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
   return parts.map((part, i) => {
     if (part.startsWith('**') && part.endsWith('**')) {
@@ -240,156 +224,182 @@ function renderInline(text: string) {
         </code>
       );
     }
-    return part;
+    return <React.Fragment key={i}>{part}</React.Fragment>;
   });
 }
 
-// ── YAML / Bash / JSON Syntax Highlighter ──
-function highlightCode(code: string, lang: string): string {
-  switch (lang.toLowerCase()) {
-    case 'yaml':
-    case 'yml':
-      return highlightYaml(code);
-    case 'bash':
-    case 'sh':
-    case 'shell':
-    case 'zsh':
-      return highlightBash(code);
-    case 'json':
-      return highlightJson(code);
-    default:
-      return escapeHtml(code);
-  }
-}
+// ═══════════════════════════════════════════
+// YAML / Bash / JSON Syntax Highlighting
+// ═══════════════════════════════════════════
 
-function escapeHtml(s: string): string {
+const C = {
+  key:      '#7ee3f8', // cyan
+  str:      '#98c379', // green
+  val:      '#e6edf3', // white (unquoted YAML values)
+  bool:     '#d2a8ff', // purple
+  num:      '#f5a623', // amber
+  comment:  '#636d83', // dim grey
+  punct:    '#636d83', // dim grey for colons, dashes
+  list:     '#f0883e', // orange for list markers
+  cmd:      '#f0883e', // orange for commands
+  flag:     '#7ee3f8', // cyan for flags
+  var:      '#d2a8ff', // purple for variables
+};
+
+function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-function highlightYaml(code: string): string {
-  return code.split('\n').map(line => {
-    const escaped = escapeHtml(line);
-
-    // Comment
-    if (/^\s*#/.test(line)) {
-      return `<span style="color:#8b949e">${escaped}</span>`;
-    }
-
-    // Document separator
-    if (/^---/.test(line)) {
-      return `<span style="color:#58a6ff;font-weight:bold">${escaped}</span>`;
-    }
-
-    // Key: value — highlight key
-    const match = line.match(/^(\s*)([\w.-]+)(\s*:\s*)(.*)$/);
-    if (match) {
-      const indent = escapeHtml(match[1]);
-      const key = escapeHtml(match[2]);
-      const colon = escapeHtml(match[3]);
-      const value = match[4];
-      const highlightedValue = highlightYamlValue(value);
-      return `${indent}<span style="color:#79c0ff">${key}</span>${colon}${highlightedValue}`;
-    }
-
-    // List item
-    if (/^\s*-\s/.test(line)) {
-      const listMatch = line.match(/^(\s*-\s+)(.*)$/);
-      if (listMatch) {
-        return `${escapeHtml(listMatch[1])}<span style="color:#f0883e">${escapeHtml(listMatch[2])}</span>`;
-      }
-    }
-
-    return escaped;
-  }).join('\n');
+function sp(color: string, text: string): string {
+  if (!text || text.startsWith('<span')) return text;
+  return `<span style="color:${color}">${text}</span>`;
 }
 
-function highlightYamlValue(value: string): string {
-  const trimmed = value.trim();
-
-  // String with quotes
-  if (/^["'].*["']$/.test(trimmed)) {
-    return `<span style="color:#a5d6ff">${escapeHtml(value)}</span>`;
-  }
-
-  // Boolean
-  if (/^(true|false|yes|no|on|off)$/i.test(trimmed)) {
-    return `<span style="color:#d2a8ff">${escapeHtml(value)}</span>`;
-  }
-
-  // Number
-  if (/^\d+(\.\d+)?$/.test(trimmed)) {
-    return `<span style="color:#79c0ff">${escapeHtml(value)}</span>`;
-  }
-
-  // Null
-  if (/^(null|~)$/i.test(trimmed)) {
-    return `<span style="color:#f97583">${escapeHtml(value)}</span>`;
-  }
-
-  // Multi-line indicator (| or >)
-  if (/^\s*[|>]\s*$/.test(value)) {
-    return `<span style="color:#d2a8ff">${escapeHtml(value)}</span>`;
-  }
-
-  return escapeHtml(value);
+function highlightLine(line: string, lang: string): string {
+  if (lang === 'yaml' || lang === 'yml') return hlYaml(line);
+  if (lang === 'bash' || lang === 'sh' || lang === 'shell') return hlBash(line);
+  if (lang === 'json') return hlJson(line);
+  return esc(line);
 }
 
-function highlightBash(code: string): string {
-  return code.split('\n').map(line => {
-    const escaped = escapeHtml(line);
+// ── YAML ──
 
-    // Comment
-    if (/^\s*#/.test(line)) {
-      return `<span style="color:#8b949e">${escaped}</span>`;
-    }
+function hlYaml(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed) return '';
 
-    // Command: kubectl, docker, curl, etc.
-    if (/^\s*(kubectl|docker|curl|wget|cat|echo|ls|cd|mkdir|rm|cp|mv|git|npm|npx|node|python)/.test(line)) {
-      return escaped.replace(
-        /^(\s*)(kubectl|docker|curl|wget|cat|echo|ls|cd|mkdir|rm|cp|mv|git|npm|npx|node|python)(.*)$/,
-        (_, indent, cmd, rest) => {
-          return `${indent}<span style="color:#f0883e;font-weight:500">${cmd}</span>${highlightBashArgs(rest)}`;
-        }
+  // Comment
+  if (trimmed.startsWith('#')) return sp(C.comment, esc(line));
+
+  // Document separator
+  if (trimmed === '---') return `<span style="color:${C.comment}">${esc(line)}</span>`;
+
+  // Extract leading whitespace
+  const indent = line.match(/^(\s*)/)![1];
+  const content = line.slice(indent.length);
+
+  // ── List item: "- key: value" or "- value" ──
+  if (/^-\s/.test(content)) {
+    const rest = content.slice(2); // after "- "
+    // Check for "key: value" after the dash
+    const kv = rest.match(/^([\w.-]+)(\s*:\s*)(.*)$/);
+    if (kv) {
+      return (
+        esc(indent) +
+        sp(C.list, '- ') +
+        sp(C.key, esc(kv[1])) +
+        sp(C.punct, esc(kv[2])) +
+        hlYamlVal(kv[3])
       );
     }
+    // Plain list item
+    return esc(indent) + sp(C.list, '- ') + sp(C.val, esc(rest));
+  }
 
-    // Variable assignment: VAR=value
-    if (/^\s*[A-Z_]+=/.test(line)) {
-      return escaped.replace(/^(\s*)([A-Z_]+)(=)(.*)$/,
-        (_, indent, varName, eq, val) =>
-          `${indent}<span style="color:#79c0ff">${varName}</span><span style="color:#484f58">${eq}</span><span style="color:#a5d6ff">${escapeHtml(val)}</span>`
-      );
-    }
+  // ── Key: value ──
+  const kv = content.match(/^([\w.-]+)(\s*:\s*)(.*)$/);
+  if (kv) {
+    return (
+      esc(indent) +
+      sp(C.key, esc(kv[1])) +
+      sp(C.punct, esc(kv[2])) +
+      hlYamlVal(kv[3])
+    );
+  }
 
-    // Pipe at start
-    if (/^\s*\|/.test(line)) {
-      return `<span style="color:#484f58">│</span> ${escaped.slice(escaped.indexOf('|') + 1)}`;
-    }
+  // Block scalar indicator
+  if (/^[|>]\s*$/.test(trimmed)) return sp(C.punct, esc(line));
 
-    return escaped;
-  }).join('\n');
+  return esc(line);
 }
 
-function highlightBashArgs(rest: string): string {
-  // Highlight flags (--flag, -f)
-  return rest.replace(/(--[\w-]+|-\w+)/g, '<span style="color:#79c0ff">$1</span>')
-    // Highlight quoted strings
-    .replace(/("([^"\\]|\\.)*"|'([^'\\]|\\.)*')/g, '<span style="color:#a5d6ff">$1</span>')
-    // Highlight variables
-    .replace(/\$\{?\w+\}?/g, '<span style="color:#d2a8ff">$&</span>');
+function hlYamlVal(val: string): string {
+  const trimmed = val.trim();
+  if (!trimmed) return esc(val);
+
+  const leading = val.slice(0, val.length - val.trimStart().length);
+  const trailing = val.slice(val.trimEnd().length);
+  const inner = trimmed;
+
+  let colored: string;
+
+  if (/^["'].*["']$/.test(inner)) {
+    colored = sp(C.str, esc(inner));
+  } else if (/^(true|false|yes|no|on|off)$/i.test(inner)) {
+    colored = sp(C.bool, esc(inner));
+  } else if (/^-?\d+(\.\d+)?([eE][+-]?\d+)?$/.test(inner)) {
+    colored = sp(C.num, esc(inner));
+  } else if (/^(null|Null|NULL|~)$/.test(inner)) {
+    colored = sp(C.bool, esc(inner));
+  } else if (inner.length > 0) {
+    // Anything else is an unquoted string
+    colored = sp(C.val, esc(inner));
+  } else {
+    colored = esc(inner);
+  }
+
+  return esc(leading) + colored + esc(trailing);
 }
 
-function highlightJson(code: string): string {
-  return code.split('\n').map(line => {
-    const escaped = escapeHtml(line);
-    // Keys
-    return escaped
-      .replace(/"([^"]+)"\s*:/g, '<span style="color:#79c0ff">"$1"</span><span style="color:#484f58">:</span>')
-      // String values
-      .replace(/:\s*"([^"]*)"/g, ': <span style="color:#a5d6ff">"$1"</span>')
-      // Numbers
-      .replace(/:\s*(\d+\.?\d*)/g, ': <span style="color:#79c0ff">$1</span>')
-      // Booleans / null
-      .replace(/:\s*(true|false|null)/g, ': <span style="color:#d2a8ff">$1</span>');
-  }).join('\n');
+// ── Bash ──
+
+const COMMANDS = new Set([
+  'kubectl', 'docker', 'docker-compose', 'helm', 'curl', 'wget',
+  'cat', 'echo', 'ls', 'cd', 'mkdir', 'rm', 'cp', 'mv', 'chmod', 'chown',
+  'git', 'npm', 'npx', 'node', 'python', 'python3', 'go', 'cargo',
+  'grep', 'sed', 'awk', 'sort', 'uniq', 'wc', 'head', 'tail',
+  'k', 'minikube', 'kind', 'terraform', 'ansible', 'env', 'which',
+  'ps', 'top', 'htop', 'df', 'du', 'ping', 'ssh', 'scp', 'rsync',
+]);
+
+function hlBash(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('#')) return sp(C.comment, esc(line));
+
+  const cmdMatch = line.match(/^(\s*)([\w][\w-]*)((?:\s|$).*)?$/);
+  if (cmdMatch && COMMANDS.has(cmdMatch[2])) {
+    const ind = cmdMatch[1];
+    const cmd = cmdMatch[2];
+    const rest = cmdMatch[3] || '';
+    return esc(ind) + sp(C.cmd, esc(cmd)) + hlArgs(rest);
+  }
+
+  return esc(line);
+}
+
+function hlArgs(args: string): string {
+  let r = esc(args);
+
+  // Flags: --word or -x (but not part of a word)
+  r = r.replace(/(\s|^)(--[\w-]+|-\w+)(?=\s|$)/g, (m, ws, flag) => ws + `<span style="color:${C.flag}">${flag}</span>`);
+
+  // Quoted strings
+  r = r.replace(/"([^"\\]|\\.)*"/g, `<span style="color:${C.str}">$&</span>`);
+  r = r.replace(/'([^'\\]|\\.)*'/g, `<span style="color:${C.str}">$&</span>`);
+
+  // Variables: $VAR, ${VAR}
+  r = r.replace(/\$\{?\w+\}?/g, `<span style="color:${C.var}">$&</span>`);
+
+  return r;
+}
+
+// ── JSON ──
+
+function hlJson(line: string): string {
+  let r = esc(line);
+
+  // Keys
+  r = r.replace(/"([^"]+)"\s*:/g, `<span style="color:${C.key}">"$1"</span><span style="color:${C.punct}">:</span>`);
+
+  // String values
+  r = r.replace(/:\s*"([^"]*)"/g, `: <span style="color:${C.str}">"$1"</span>`);
+
+  // Numbers
+  r = r.replace(/:\s*(-?\d+(\.\d+)?([eE][+-]?\d+)?)/g, `: <span style="color:${C.num}">$1</span>`);
+
+  // Booleans / null
+  r = r.replace(/:\s*(true|false|null)\b/g, `: <span style="color:${C.bool}">$1</span>`);
+
+  return r;
 }

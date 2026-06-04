@@ -1,0 +1,35 @@
+# Kubernetes Learning Terminal Container
+# Provides kubectl and minikube in a sandboxed environment
+
+FROM bitnami/kubectl:latest
+
+USER root
+
+# Install additional tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    wget \
+    git \
+    vim \
+    bash-completion \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install kubectl bash completion
+RUN kubectl completion bash > /etc/bash_completion.d/kubectl
+
+# Create a non-root user
+RUN useradd -m -s /bin/bash k8suser
+
+# Setup kubeconfig for minikube
+ENV KUBECONFIG=/home/k8suser/.kube/config
+
+# Copy entrypoint
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+WORKDIR /home/k8suser
+USER k8suser
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/bin/bash"]

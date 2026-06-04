@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # Main webapp
+  webapp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ~/.kube:/root/.kube:ro
+    environment:
+      - NODE_ENV=production
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    depends_on:
+      - terminal
+
+  # Terminal backend (sandboxed kubectl environment)
+  terminal:
+    build:
+      context: .
+      dockerfile: Dockerfile.terminal
+    ports:
+      - "7682:7681"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ~/.kube:/home/k8suser/.kube:ro
+    environment:
+      - KUBECONFIG=/home/k8suser/.kube/config
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp:unconfined
+    stdin_open: true
+    tty: true
+
+  # Minikube (optional - for running actual k8s)
+  minikube:
+    image: kicbase/stable:v0.0.42
+    privileged: true
+    ports:
+      - "8443:8443"
+    volumes:
+      - minikube-data:/var
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - KUBECONFIG=/root/.kube/config
+
+volumes:
+  minikube-data:

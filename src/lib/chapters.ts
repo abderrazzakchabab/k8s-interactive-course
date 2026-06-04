@@ -800,6 +800,17 @@ kubectl run nginx --image=nginx --env="DB_USER=\$(kubectl get secret db-credenti
         initialCommand: "kubectl create configmap my-config --from-literal=APP_NAME=MyApp --from-literal=VERSION=1.0",
         expectedOutput: "configmap/my-config created",
         verificationCommand: "kubectl describe configmap my-config"
+      },
+      {
+        id: "ch4-ex2",
+        title: "Create and Decode a Secret",
+        description: "Work with Kubernetes Secrets - create, view, and decode them.",
+        instruction: "Create a secret named 'app-secret' with literal credentials (username=admin, password=myPass123). Then decode the password value to verify it.",
+        hint: "kubectl create secret generic app-secret --from-literal=username=admin --from-literal=password=myPass123\nkubectl get secret app-secret -o jsonpath='{.data.password}' | base64 --decode",
+        solution: "kubectl create secret generic app-secret --from-literal=username=admin --from-literal=password=myPass123\nkubectl get secret app-secret -o jsonpath='{.data.password}' | base64 --decode",
+        initialCommand: "kubectl create secret generic app-secret --from-literal=username=admin --from-literal=password=myPass123",
+        expectedOutput: "secret/app-secret created",
+        verificationCommand: "kubectl get secret app-secret"
       }
     ]
   },
@@ -901,10 +912,21 @@ kubectl get pods`
         description: "Provision persistent storage for a pod.",
         instruction: "Create a PVC named 'data-pvc' requesting 500Mi storage with ReadWriteOnce access. Then create a pod that mounts it at /data.",
         hint: "Use kubectl apply with a PVC YAML, then run a pod with volume mounts.",
-        solution: "kubectl apply -f - <<EOF\napiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: data-pvc\nspec:\n  accessModes:\n    - ReadWriteOnce\n  resources:\n    requests:\n      storage: 500Mi\nEOF",
+        solution: "kubectl apply -f - <<EOF\napiVersion: v1\nkind: PersistentVolumeClaim\nmetadata:\n  name: data-pvc\nspec:\n  accessModes:\n    - ReadWriteOnce\n  resources:\n    requests:\n      storage: 500Mi\nEOF\nkubectl run storage-pod --image=nginx --restart=Never -- /bin/sh -c 'echo hello > /data/test && cat /data/test'",
         initialCommand: "kubectl get pvc",
         expectedOutput: "No resources found",
         verificationCommand: "kubectl get storageclass"
+      },
+      {
+        id: "ch5-ex2",
+        title: "Create a ConfigMap-backed Volume",
+        description: "Inject configuration as files into a pod using a ConfigMap volume.",
+        instruction: "Create a ConfigMap named 'app-config' with literal keys (app.properties with value 'db.host=localhost'), then create a pod that mounts it as a volume at /etc/config.",
+        hint: "kubectl create configmap app-config --from-literal=app.properties='db.host=localhost'\nkubectl run config-pod --image=nginx --restart=Never -o yaml --dry-run=client > pod.yaml\n# Then edit to add volume mounts",
+        solution: "kubectl create configmap app-config --from-literal=app.properties='db.host=localhost'\nkubectl apply -f - <<EOF\napiVersion: v1\nkind: Pod\nmetadata:\n  name: config-pod\nspec:\n  volumes:\n    - name: config-volume\n      configMap:\n        name: app-config\n  containers:\n    - name: nginx\n      image: nginx\n      volumeMounts:\n        - mountPath: /etc/config\n          name: config-volume\nEOF",
+        initialCommand: "kubectl create configmap app-config --from-literal=app.properties='db.host=localhost'",
+        expectedOutput: "configmap/app-config created",
+        verificationCommand: "kubectl get configmap app-config"
       }
     ]
   },
@@ -1006,6 +1028,17 @@ kubectl describe node | grep -A5 "PodCIDR"`
         initialCommand: "kubectl get pods -n kube-system | head -10",
         expectedOutput: "kube-proxy",
         verificationCommand: "kubectl get nodes -o jsonpath='{.items[0].spec.podCIDR}'"
+      },
+      {
+        id: "ch6-ex2",
+        title: "Test Pod-to-Pod Communication",
+        description: "Verify network connectivity between pods in the cluster.",
+        instruction: "Run a temporary busybox pod and test connectivity to the nginx service using wget. Verify that pods can communicate across the cluster network.",
+        hint: "kubectl run test-pod --rm -it --restart=Never --image=busybox -- wget -qO- http://web-app:80 2>&1 || echo 'Service not found yet - create one first if needed'",
+        solution: "First ensure web-app deployment exists:\nkubectl create deployment web-app --image=nginx:alpine --replicas=2\nkubectl expose deployment web-app --port=80\nkubectl run test-pod --rm -it --restart=Never --image=busybox -- wget -qO- http://web-app:80",
+        initialCommand: "kubectl get pods -l app=web-app",
+        expectedOutput: "web-app",
+        verificationCommand: "kubectl get endpoints web-app"
       }
     ]
   },
@@ -1121,6 +1154,78 @@ kubectl port-forward svc/web-app 8080:80`
         initialCommand: "kubectl get svc web-app",
         expectedOutput: "web-app",
         verificationCommand: "kubectl port-forward svc/web-app 8080:80 --address=0.0.0.0"
+      }
+    ]
+  },
+  {
+    id: "ch8-cleanup",
+    number: 8,
+    title: "Cleanup & Next Steps",
+    subtitle: "Cleaning Up Resources and What's Next",
+    duration: "15 min",
+    sections: [
+      {
+        title: "Cleaning Up Resources",
+        content: `When you're done experimenting, it's good practice to clean up resources to free cluster capacity.
+
+**Commands to clean up:**
+\`\`\`bash
+# Delete all resources created in this course
+kubectl delete deployment --all
+kubectl delete pod --all
+kubectl delete service --all
+kubectl delete configmap --all
+kubectl delete secret --all
+kubectl delete pvc --all
+
+# Verify cleanup
+kubectl get all
+\`\`\`
+
+**Note:** This won't delete system pods (kube-system namespace) or the cluster itself.`,
+        codeExample: `# Quick cleanup - delete all course resources
+kubectl delete deployment --all 2>/dev/null
+kubectl delete pod --all 2>/dev/null
+kubectl delete service --all 2>/dev/null
+kubectl delete configmap --all 2>/dev/null
+kubectl delete secret --all 2>/dev/null
+kubectl delete pvc --all 2>/dev/null
+echo "Cleanup complete!"
+kubectl get all`
+      },
+      {
+        title: "What's Next?",
+        content: `Congratulations! You've completed the Kubernetes 101 course. Here's what to explore next:
+
+**Next Steps:**
+1. **Helm** - Kubernetes package manager for deploying complex applications
+2. **Operators** - Extend Kubernetes with custom controllers
+3. **Service Mesh** - Istio, Linkerd for advanced traffic management
+4. **GitOps** - ArgoCD, Flux for declarative deployments
+5. **Certifications** - CKA (Certified Kubernetes Administrator), CKAD
+
+**Production Considerations:**
+- **High Availability** - Multi-master, multi-node clusters
+- **Backup & Disaster Recovery** - Velero for cluster backups
+- **Security** - Pod Security Standards, OPA/Gatekeeper
+- **Monitoring** - Prometheus, Grafana, Loki
+- **Cost Optimization** - Right-sizing, spot instances, cluster autoscaling
+
+Keep learning and happy Kubernetting! 🚀`
+      }
+    ],
+    quiz: [],
+    exercises: [
+      {
+        id: "ch8-ex1",
+        title: "Clean Up All Resources",
+        description: "Clean up all resources created during this course.",
+        instruction: "Delete all deployments, pods, services, configmaps, secrets, and PVCs in the default namespace. Verify the cleanup.",
+        hint: "kubectl delete deployment --all\nkubectl delete pod --all\nkubectl delete service --all\nkubectl delete configmap --all\nkubectl delete secret --all\nkubectl delete pvc --all",
+        solution: "kubectl delete deployment --all --ignore-not-found\nkubectl delete pod --all --ignore-not-found\nkubectl delete service --all --ignore-not-found\nkubectl delete configmap --all --ignore-not-found\nkubectl delete secret --all --ignore-not-found\nkubectl delete pvc --all --ignore-not-found\nkubectl get all",
+        initialCommand: "kubectl get all",
+        expectedOutput: "No resources found in default namespace",
+        verificationCommand: "kubectl get pods --no-headers 2>/dev/null | wc -l"
       }
     ]
   }

@@ -59,8 +59,7 @@ function TerminalContent() {
                   <button
                     key={item.cmd}
                     onClick={() => {
-                      // We'll use a simple approach: copy to clipboard
-                      navigator.clipboard.writeText(item.cmd);
+                      window.dispatchEvent(new CustomEvent('terminal-execute', { detail: { command: item.cmd } }));
                     }}
                     className="w-full text-left px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition text-xs"
                   >

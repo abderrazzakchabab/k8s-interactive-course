@@ -90,6 +90,19 @@ export default function Terminal({ initialCommand, height = '400px', readOnly = 
     }
   }, [initialCommand]);
 
+  // Listen for external execute events (e.g. from quick commands sidebar)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.command) {
+        setInput(detail.command);
+        executeCommand(detail.command);
+      }
+    };
+    window.addEventListener('terminal-execute', handler);
+    return () => window.removeEventListener('terminal-execute', handler);
+  }, []);
+
   // Auto-scroll to bottom
   useEffect(() => {
     if (outputRef.current) {

@@ -1,12 +1,143 @@
 'use client';
 
+import React, { useState } from 'react';
 import { Chapter } from '@/lib/types';
 import Quiz from './Quiz';
 import Exercise from './Exercise';
 import Diagram from './Diagram';
+import MarkdownRenderer from './MarkdownRenderer';
 
 interface ChapterContentProps {
   chapter: Chapter;
+}
+
+function detectCodeLang(code: string): string {
+  const trimmed = code.trimStart();
+  if (trimmed.startsWith('apiVersion:') || trimmed.startsWith('kind:') || trimmed.startsWith('metadata:') || /^\s*(spec|selector|template):/.test(trimmed)) return 'yaml';
+  if (trimmed.startsWith('kubectl') || trimmed.startsWith('docker') || trimmed.startsWith('curl') || trimmed.startsWith('helm')) return 'bash';
+  if (trimmed.startsWith('{') || trimmed.startsWith('[')) return 'json';
+  return '';
+}
+
+// ── Syntax-highlighted code example block ──
+
+// Key/value colour map for YAML rendering
+const YAML_COLORS: Record<string, string> = {
+  key: '#79c0ff',       // blue
+  string: '#a5d6ff',    // light blue
+  boolean: '#d2a8ff',   // purple
+  number: '#79c0ff',    // blue
+  null: '#f97583',      // red
+  comment: '#8b949e',   // grey
+  punctuation: '#484f58', // dim grey
+  directive: '#58a6ff',  // bright blue
+  listMarker: '#f0883e', // orange
+  command: '#f0883e',    // orange
+  flag: '#79c0ff',       // blue
+  variable: '#d2a8ff',   // purple
+  operator: '#484f58',   // dim
+};
+
+function highlightLine(line: string, lang: string): string {
+  const esc = (s: string) => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  if (lang === 'yaml') {
+    if (/^\s*#/.test(line)) return `<span style="color:${YAML_COLORS.comment}">${esc(line)}</span>`;
+    if (/^---/.test(line)) return `<span style="color:${YAML_COLORS.directive};font-weight:600">${esc(line)}</span>`;
+
+    const kv = line.match(/^(\s*)([\w.-]+)(\s*:\s*)(.*)$/);
+    if (kv) {
+      const [, indent, key, sep, val] = kv;
+      let styledVal = esc(val);
+      const tv = val.trim();
+      if (/^["'].*["']$/.test(tv)) styledVal = `<span style="color:${YAML_COLORS.string}">${esc(val)}</span>`;
+      else if (/^(true|false|yes|no)$/i.test(tv)) styledVal = `<span style="color:${YAML_COLORS.boolean}">${esc(val)}</span>`;
+      else if (/^\d+(\.\d+)?$/.test(tv)) styledVal = `<span style="color:${YAML_COLORS.number}">${esc(val)}</span>`;
+      else if (/^(null|~)$/i.test(tv)) styledVal = `<span style="color:${YAML_COLORS.null}">${esc(val)}</span>`;
+      return `${esc(indent)}<span style="color:${YAML_COLORS.key}">${esc(key)}</span><span style="color:${YAML_COLORS.punctuation}">${esc(sep)}</span>${styledVal}`;
+    }
+
+    const li = line.match(/^(\s*-\s+)(.*)$/);
+    if (li) return `${esc(li[1])}<span style="color:${YAML_COLORS.listMarker}">${esc(li[2])}</span>`;
+
+    return esc(line);
+  }
+
+  if (lang === 'bash') {
+    if (/^\s*#/.test(line)) return `<span style="color:${YAML_COLORS.comment}">${esc(line)}</span>`;
+    const cmd = line.match(/^(\s*)(kubectl|docker|curl|wget|cat|echo|ls|cd|mkdir|rm|cp|mv|git|npm|npx|node|python|helm|k)(\s+.*)$/);
+    if (cmd) {
+      return `${esc(cmd[1])}<span style="color:${YAML_COLORS.command};font-weight:500">${esc(cmd[2])}</span>${highlightBashArgs(cmd[3], esc)}`;
+    }
+    return esc(line);
+  }
+
+  if (lang === 'json') {
+    return esc(line)
+      .replace(/"([^"]+)"\s*:/g, `<span style="color:${YAML_COLORS.key}">"$1"</span><span style="color:${YAML_COLORS.punctuation}">:</span>`)
+      .replace(/:\s*"([^"]*)"/g, `: <span style="color:${YAML_COLORS.string}">"$1"</span>`)
+      .replace(/:\s*(\d+\.?\d*)/g, `: <span style="color:${YAML_COLORS.number}">$1</span>`)
+      .replace(/:\s*(true|false|null)/g, `: <span style="color:${YAML_COLORS.boolean}">$1</span>`);
+  }
+
+  return esc(line);
+}
+
+function highlightBashArgs(rest: string, esc: (s: string) => string): string {
+  return rest
+    .replace(/(--[\w-]+|-\w+)/g, `<span style="color:${YAML_COLORS.flag}">$1</span>`)
+    .replace(/("([^"\\]|\\.)*"|'([^'\\]|\\.)*')/g, `<span style="color:${YAML_COLORS.string}">$1</span>`)
+    .replace(/\$\{?\w+\}?/g, `<span style="color:${YAML_COLORS.variable}">$&</span>`);
+}
+
+function CodeExampleWithHighlight({ code }: { code: string }) {
+  const lang = detectCodeLang(code);
+  const lines = code.split('\n');
+  const firstCmd = code.trim().split('\n')[0] || '';
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="mt-4 bg-[#0d1117] rounded-lg overflow-hidden border border-slate-700">
+      <div className="px-4 py-2 bg-[#161b22] border-b border-slate-700 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-500 font-mono">{lang || 'bash'}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={handleCopy} className="text-xs text-slate-500 hover:text-slate-300 transition">
+            {copied ? 'Copied!' : 'Copy'}
+          </button>
+        </div>
+      </div>
+      <pre className="p-4 text-sm overflow-x-auto leading-relaxed">
+        <code className="block font-mono">
+          {lines.map((line, li) => (
+            <span
+              key={li}
+              className="block hover:bg-white/[0.02]"
+              dangerouslySetInnerHTML={{ __html: highlightLine(line, lang) }}
+            />
+          ))}
+        </code>
+      </pre>
+      <div className="px-4 py-2 bg-[#161b22] border-t border-slate-700 flex items-center gap-3">
+        <a
+          href={`/terminal?cmd=${encodeURIComponent(firstCmd)}`}
+          className="text-xs text-[#326CE5] hover:text-[#60a5fa] transition flex items-center gap-1"
+        >
+          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          Try it in Terminal
+        </a>
+      </div>
+    </div>
+  );
 }
 
 export default function ChapterContent({ chapter }: ChapterContentProps) {
@@ -53,60 +184,18 @@ export default function ChapterContent({ chapter }: ChapterContentProps) {
               <h2 className="text-lg font-semibold text-white">{section.title}</h2>
             </div>
             <div className="p-6">
-              <div className="prose prose-invert max-w-none prose-slate">
-                {section.content.split('\n').map((line, i) => {
-                  if (line.startsWith('**') && line.endsWith('**')) {
-                    return <h3 key={i} className="text-white font-semibold mt-4 mb-2">{line.replace(/\*\*/g, '')}</h3>;
-                  }
-                  if (line.startsWith('- **')) {
-                    const match = line.match(/- \*\*(.+?)\*\*: (.+)/);
-                    if (match) {
-                      return <li key={i} className="text-slate-300 ml-4"><strong className="text-white">{match[1]}</strong>: {match[2]}</li>;
-                    }
-                  }
-                  if (line.startsWith('- ')) {
-                    return <li key={i} className="text-slate-300 ml-4">{line.slice(2)}</li>;
-                  }
-                  if (line.startsWith('| ')) {
-                    return <span key={i} className="text-slate-300 font-mono text-xs">{line}{'\n'}</span>;
-                  }
-                  if (line.trim() === '') {
-                    return <br key={i} />;
-                  }
-                  return <p key={i} className="text-slate-300 mb-2">{line}</p>;
-                })}
+              {/* Inline content with proper markdown + YAML rendering */}
+              <div className="max-w-none">
+                <MarkdownRenderer content={section.content} />
               </div>
-              
+
               {section.diagramId && (
                 <Diagram diagramId={section.diagramId} />
               )}
-              
+
+              {/* Code Example with syntax highlighting */}
               {section.codeExample && (
-                <div className="mt-4 bg-[#0d1117] rounded-lg overflow-hidden border border-slate-700">
-                  <div className="px-4 py-2 bg-[#161b22] border-b border-slate-700 flex items-center justify-between">
-                    <span className="text-xs text-slate-400">📄 Example</span>
-                    <button
-                      onClick={() => navigator.clipboard.writeText(section.codeExample || '')}
-                      className="text-xs text-slate-500 hover:text-slate-300 transition"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                  <pre className="p-4 text-sm text-slate-300 overflow-x-auto">
-                    <code>{section.codeExample}</code>
-                  </pre>
-                  <div className="px-4 py-2 bg-[#161b22] border-t border-slate-700">
-                    <a
-                      href={`/terminal?cmd=${encodeURIComponent(section.codeExample.split('\n')[0])}`}
-                      className="text-xs text-[#326CE5] hover:text-[#60a5fa] transition flex items-center gap-1"
-                    >
-                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                      </svg>
-                      Try it in Terminal
-                    </a>
-                  </div>
-                </div>
+                <CodeExampleWithHighlight code={section.codeExample} />
               )}
             </div>
           </div>

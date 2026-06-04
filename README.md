@@ -4,6 +4,7 @@ An interactive web application to learn Kubernetes from scratch. Features chapte
 
 
 
+
 ## 📸 Screenshots
 
 | Homepage | Chapters |
@@ -12,7 +13,11 @@ An interactive web application to learn Kubernetes from scratch. Features chapte
 
 | Chapter 1 - Introduction | Chapter 2 - Deployments |
 |:---:|:---:|
-| ![Chapter 1](screenshots/03-chapter1.png) | ![Chapter 2](screenshots/04-chapter2-deployments.png) |
+| ![Chapter 1](screenshots/03-chapter1.png) | ![Chapter 2](screenshots/08-chapter2-full.png) |
+
+| Chapter 4 - Config & Secrets (YAML Highlighting) | Chapter 5 - Storage (YAML Highlighting) |
+|:---:|:---:|
+| ![Chapter 4](screenshots/09-chapter4-secrets.png) | ![Chapter 5](screenshots/10-chapter5-storage.png) |
 
 | Exercises | Terminal |
 |:---:|:---:|

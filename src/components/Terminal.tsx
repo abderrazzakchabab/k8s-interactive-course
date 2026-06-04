@@ -22,7 +22,7 @@ export default function Terminal({ initialCommand, height = '400px', readOnly = 
   // Fallback: Simple terminal UI using fetch to Docker API
   const executeCommand = async (cmd: string) => {
     if (!cmd.trim()) return;
-    
+
     setOutput(prev => [...prev, `$ ${cmd}`]);
     setCommandHistory(prev => [...prev, cmd]);
     setHistoryIndex(-1);
@@ -35,23 +35,26 @@ export default function Terminal({ initialCommand, height = '400px', readOnly = 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ command: cmd }),
       });
-      
-      if (response.ok) {
-        const data = await response.json();
-        const result = data.output || data.stdout || '';
-        if (result) {
-          setOutput(prev => [...prev, result]);
-        }
-        if (data.stderr) {
-          setOutput(prev => [...prev, `\x1b[31m${data.stderr}\x1b[0m`]);
-        }
-      } else {
-        setOutput(prev => [...prev, '\x1b[31mCommand execution failed\x1b[0m']);
+
+      const data = await response.json();
+      const result = data.output || data.stdout || '';
+      const error = data.stderr || '';
+
+      // Show stdout
+      if (result.trim()) {
+        setOutput(prev => [...prev, result]);
+      }
+      // Show stderr in red (use a marker that the display code can parse)
+      if (error.trim()) {
+        setOutput(prev => [...prev, `__STDERR__${error}`]);
+      }
+      // If both empty and not ok
+      if (!result.trim() && !error.trim() && !response.ok) {
+        setOutput(prev => [...prev, `__STDERR__Command failed (status ${response.status})`]);
       }
     } catch (err) {
-      setOutput(prev => [...prev, `\x1b[31mConnection error. Running locally...\x1b[0m`]);
-      // Fallback: Show the command for reference
-      setOutput(prev => [...prev, `\x1b[33m[To run this command, use your local terminal]\x1b[0m`]);
+      setOutput(prev => [...prev, `__STDERR__Connection error: unable to reach terminal API`]);
+      setOutput(prev => [...prev, `__WARN__[To run this command, use your local terminal: ${cmd}]`]);
     }
   };
 
@@ -136,21 +139,23 @@ export default function Terminal({ initialCommand, height = '400px', readOnly = 
           </div>
         )}
         {output.map((line, i) => (
-          <div key={i} className="text-sm whitespace-pre-wrap">
+          <div key={i} className="text-sm whitespace-pre-wrap font-mono leading-6">
             {line.startsWith('$ ') ? (
               <span>
                 <span className="text-green-400">┌──(</span>
                 <span className="text-[#326CE5]">k8s-learn</span>
-                <span className="text-green-400">)-[~]\n└─$ </span>
+                <span className="text-green-400">)-[~]</span>
+                {'\n'}
+                <span className="text-green-400">└─$ </span>
                 <span className="text-white">{line.slice(2)}</span>
               </span>
-            ) : line.includes('\\x1b[31m') ? (
-              <span className="text-red-400">
-                {line.replace(/\\x1b\[31m|\\x1b\[0m/g, '')}
+            ) : line.startsWith('__STDERR__') ? (
+              <span className="text-red-400 block">
+                {line.slice(10)}
               </span>
-            ) : line.includes('\\x1b[33m') ? (
-              <span className="text-yellow-400">
-                {line.replace(/\\x1b\[33m|\\x1b\[0m/g, '')}
+            ) : line.startsWith('__WARN__') ? (
+              <span className="text-yellow-400 block">
+                {line.slice(8)}
               </span>
             ) : (
               <span className="text-slate-300">{line}</span>
